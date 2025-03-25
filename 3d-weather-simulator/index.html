@@ -1,0 +1,919 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Weather Simulation</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            font-family: Arial, sans-serif;
+        }
+        #canvas {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+        }
+        #controls {
+            position: absolute;
+            top: 10px;
+            left: 10px;
+            background-color: rgba(0, 0, 0, 0.7);
+            color: white;
+            padding: 15px;
+            border-radius: 5px;
+            z-index: 100;
+            max-width: 250px;
+        }
+        h2 {
+            margin-top: 0;
+            margin-bottom: 10px;
+        }
+        .control-group {
+            margin-bottom: 15px;
+        }
+        button {
+            background-color: #4CAF50;
+            border: none;
+            color: white;
+            padding: 8px 12px;
+            text-align: center;
+            text-decoration: none;
+            display: inline-block;
+            font-size: 14px;
+            margin: 4px 2px;
+            cursor: pointer;
+            border-radius: 4px;
+        }
+        button.active {
+            background-color: #007bff;
+        }
+        label {
+            display: block;
+            margin-bottom: 5px;
+        }
+        input[type=range] {
+            width: 100%;
+        }
+    </style>
+</head>
+<body>
+    <div id="canvas"></div>
+    <div id="controls">
+        <h2>Weather Simulation</h2>
+        <div class="control-group">
+            <label>Weather Type:</label>
+            <button id="rain" class="active">Rain</button>
+            <button id="snow">Snow</button>
+            <button id="tornado">Tornado</button>
+            <button id="sunny">Sunny</button>
+            <button id="fog">Fog</button>
+        </div>
+        <div class="control-group">
+            <label>Intensity: <span id="intensity-value">5</span></label>
+            <input type="range" id="intensity" min="1" max="10" value="5">
+        </div>
+        <div class="control-group">
+            <label>Wind Speed: <span id="wind-value">5</span></label>
+            <input type="range" id="wind" min="0" max="10" value="5">
+        </div>
+        <div class="control-group">
+            <label>Wind Direction: <span id="direction-value">0°</span></label>
+            <input type="range" id="direction" min="0" max="360" value="0">
+        </div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        // Scene setup
+        const scene = new THREE.Scene();
+        const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
+        const renderer = new THREE.WebGLRenderer({ antialias: true });
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.shadowMap.enabled = true;
+        document.getElementById('canvas').appendChild(renderer.domElement);
+        
+        // Camera position
+        camera.position.set(0, 20, 30);
+        
+        // Basic orbit controls implementation
+        const controls = {
+            rotateSpeed: 1.0,
+            zoomSpeed: 1.2,
+            target: new THREE.Vector3(0, 0, 0),
+            update: function() {
+                camera.lookAt(this.target);
+            }
+        };
+        
+        // Mouse controls
+        let isDragging = false;
+        let previousMousePosition = {
+            x: 0,
+            y: 0
+        };
+        
+        document.addEventListener('mousedown', function(e) {
+            isDragging = true;
+        });
+        
+        document.addEventListener('mousemove', function(e) {
+            const deltaMove = {
+                x: e.offsetX - previousMousePosition.x,
+                y: e.offsetY - previousMousePosition.y
+            };
+            
+            if(isDragging) {
+                const deltaRotationQuaternion = new THREE.Quaternion()
+                    .setFromEuler(new THREE.Euler(
+                        toRadians(deltaMove.y * controls.rotateSpeed),
+                        toRadians(deltaMove.x * controls.rotateSpeed),
+                        0,
+                        'XYZ'
+                    ));
+                
+                camera.position.sub(controls.target);
+                camera.position.applyQuaternion(deltaRotationQuaternion);
+                camera.position.add(controls.target);
+                
+                controls.update();
+            }
+            
+            previousMousePosition = {
+                x: e.offsetX,
+                y: e.offsetY
+            };
+        });
+        
+        document.addEventListener('mouseup', function(e) {
+            isDragging = false;
+        });
+        
+        // Convert degrees to radians
+        function toRadians(angle) {
+            return angle * (Math.PI / 180);
+        }
+        
+        // Zoom with mouse wheel
+        document.addEventListener('wheel', function(e) {
+            const zoomAmount = e.deltaY * 0.001 * controls.zoomSpeed;
+            const direction = new THREE.Vector3().subVectors(camera.position, controls.target).normalize();
+            
+            camera.position.addScaledVector(direction, zoomAmount);
+            controls.update();
+        });
+        
+        // Lighting
+        const ambientLight = new THREE.AmbientLight(0x404040, 0.5);
+        scene.add(ambientLight);
+        
+        const directionalLight = new THREE.DirectionalLight(0xffffff, 1);
+        directionalLight.position.set(50, 200, 100);
+        directionalLight.castShadow = true;
+        directionalLight.shadow.mapSize.width = 1024;
+        directionalLight.shadow.mapSize.height = 1024;
+        directionalLight.shadow.camera.near = 10;
+        directionalLight.shadow.camera.far = 400;
+        directionalLight.shadow.camera.left = -100;
+        directionalLight.shadow.camera.right = 100;
+        directionalLight.shadow.camera.top = 100;
+        directionalLight.shadow.camera.bottom = -100;
+        scene.add(directionalLight);
+        
+        // Ground
+        const groundGeometry = new THREE.PlaneGeometry(200, 200);
+        const groundMaterial = new THREE.MeshStandardMaterial({ 
+            color: 0x267F00,
+            roughness: 0.8,
+            metalness: 0.2
+        });
+        const ground = new THREE.Mesh(groundGeometry, groundMaterial);
+        ground.rotation.x = -Math.PI / 2;
+        ground.receiveShadow = true;
+        scene.add(ground);
+        
+        // Add some terrain features
+        function createHill(x, z, radius, height) {
+            const geometry = new THREE.ConeGeometry(radius, height, 32);
+            const material = new THREE.MeshStandardMaterial({ 
+                color: 0x267F00, 
+                roughness: 0.9,
+                metalness: 0.1
+            });
+            const hill = new THREE.Mesh(geometry, material);
+            hill.position.set(x, height / 2, z);
+            hill.castShadow = true;
+            hill.receiveShadow = true;
+            scene.add(hill);
+        }
+        
+        // Create a few hills
+        createHill(-30, -20, 15, 10);
+        createHill(40, 10, 20, 15);
+        createHill(0, -50, 25, 18);
+        
+        // Add trees
+        function createTree(x, z) {
+            const trunkGeometry = new THREE.CylinderGeometry(0.5, 0.7, 5);
+            const trunkMaterial = new THREE.MeshStandardMaterial({ color: 0x8B4513 });
+            const trunk = new THREE.Mesh(trunkGeometry, trunkMaterial);
+            trunk.position.set(x, 2.5, z);
+            trunk.castShadow = true;
+            scene.add(trunk);
+            
+            const leavesGeometry = new THREE.ConeGeometry(3, 7, 16);
+            const leavesMaterial = new THREE.MeshStandardMaterial({ color: 0x097054 });
+            const leaves = new THREE.Mesh(leavesGeometry, leavesMaterial);
+            leaves.position.set(x, 7, z);
+            leaves.castShadow = true;
+            scene.add(leaves);
+            
+            return { trunk, leaves };
+        }
+        
+        // Create several trees
+        const trees = [];
+        for (let i = 0; i < 15; i++) {
+            const x = Math.random() * 160 - 80;
+            const z = Math.random() * 160 - 80;
+            if (Math.sqrt(x*x + z*z) > 20) { // Keep center area clear
+                trees.push(createTree(x, z));
+            }
+        }
+        
+        // Simple sky implementation
+        function createSky() {
+            const skyGeometry = new THREE.SphereGeometry(400, 32, 32);
+            // Make sure the normals point inward
+            skyGeometry.scale(-1, 1, 1);
+            const skyMaterial = new THREE.MeshBasicMaterial({
+                color: 0x87CEEB,
+                side: THREE.BackSide
+            });
+            const sky = new THREE.Mesh(skyGeometry, skyMaterial);
+            scene.add(sky);
+            
+            return { 
+                mesh: sky,
+                setColor: function(color) {
+                    skyMaterial.color.set(color);
+                }
+            };
+        }
+        
+        const sky = createSky();
+        
+        // Add a simple sun
+        const sunGeometry = new THREE.SphereGeometry(10, 32, 32);
+        const sunMaterial = new THREE.MeshBasicMaterial({ color: 0xffffcc });
+        const sun = new THREE.Mesh(sunGeometry, sunMaterial);
+        sun.position.set(100, 200, 50);
+        scene.add(sun);
+        
+        function updateSun(position) {
+            sun.position.copy(position);
+            directionalLight.position.copy(position);
+        }
+        
+        // Weather systems
+        let currentWeather = "rain";
+        let intensity = 5;
+        let windSpeed = 5;
+        let windDirection = 0;
+        let particleSystem = null;
+        let tornado = null;
+        let particles = [];
+        
+        // Rain system
+        function createRain() {
+            if (particleSystem) {
+                scene.remove(particleSystem);
+                particles = [];
+            }
+            
+            const rainCount = intensity * 1000;
+            const rainGeometry = new THREE.BufferGeometry();
+            const rainPositions = new Float32Array(rainCount * 3);
+            const rainVelocities = [];
+            
+            for (let i = 0; i < rainCount; i++) {
+                const x = (Math.random() - 0.5) * 200;
+                const y = (Math.random()) * 100 + 10;
+                const z = (Math.random() - 0.5) * 200;
+                
+                rainPositions[i * 3] = x;
+                rainPositions[i * 3 + 1] = y;
+                rainPositions[i * 3 + 2] = z;
+                
+                // Store velocities separately for animation
+                const dirRadians = windDirection * Math.PI / 180;
+                const windX = Math.sin(dirRadians) * windSpeed * 0.01;
+                const windZ = Math.cos(dirRadians) * windSpeed * 0.01;
+                
+                rainVelocities.push({
+                    x: windX,
+                    y: -0.2 - Math.random() * 0.3,
+                    z: windZ
+                });
+            }
+            
+            rainGeometry.setAttribute('position', new THREE.BufferAttribute(rainPositions, 3));
+            
+            const rainMaterial = new THREE.PointsMaterial({
+                color: 0x99ccff,
+                size: 0.1,
+                transparent: true,
+                opacity: 0.6
+            });
+            
+            particleSystem = new THREE.Points(rainGeometry, rainMaterial);
+            scene.add(particleSystem);
+            
+            particles = rainVelocities;
+            
+            // Change sky to dark blue for rain
+            sky.setColor(0x445566);
+            
+            return particleSystem;
+        }
+        
+        // Snow system
+        function createSnow() {
+            if (particleSystem) {
+                scene.remove(particleSystem);
+                particles = [];
+            }
+            
+            const snowCount = intensity * 1000;
+            const snowGeometry = new THREE.BufferGeometry();
+            const snowPositions = new Float32Array(snowCount * 3);
+            const snowVelocities = [];
+            
+            for (let i = 0; i < snowCount; i++) {
+                const x = (Math.random() - 0.5) * 200;
+                const y = (Math.random()) * 100 + 10;
+                const z = (Math.random() - 0.5) * 200;
+                
+                snowPositions[i * 3] = x;
+                snowPositions[i * 3 + 1] = y;
+                snowPositions[i * 3 + 2] = z;
+                
+                // Store velocities separately for animation with some random movement
+                const dirRadians = windDirection * Math.PI / 180;
+                const windX = Math.sin(dirRadians) * windSpeed * 0.01;
+                const windZ = Math.cos(dirRadians) * windSpeed * 0.01;
+                
+                snowVelocities.push({
+                    x: windX + (Math.random() - 0.5) * 0.05,
+                    y: -0.05 - Math.random() * 0.1,
+                    z: windZ + (Math.random() - 0.5) * 0.05,
+                    wobble: Math.random() * Math.PI * 2,
+                    wobbleSpeed: Math.random() * 0.02
+                });
+            }
+            
+            snowGeometry.setAttribute('position', new THREE.BufferAttribute(snowPositions, 3));
+            
+            const snowMaterial = new THREE.PointsMaterial({
+                color: 0xffffff,
+                size: 0.2,
+                transparent: true,
+                opacity: 0.8
+            });
+            
+            particleSystem = new THREE.Points(snowGeometry, snowMaterial);
+            scene.add(particleSystem);
+            
+            particles = snowVelocities;
+            
+            // Change sky to light gray for snow
+            sky.setColor(0xaaaacc);
+            
+            // Add fog effect for snow
+            scene.fog = new THREE.FogExp2(0xaaaacc, 0.005);
+            
+            return particleSystem;
+        }
+        
+        // Tornado system
+        function createTornado() {
+            if (particleSystem) {
+                scene.remove(particleSystem);
+                particles = [];
+            }
+            
+            if (tornado) {
+                scene.remove(tornado);
+            }
+            
+            // Create tornado funnel
+            const segments = 50;
+            const tornadoGeometry = new THREE.BufferGeometry();
+            const tornadoPositions = new Float32Array(segments * 3);
+            const tornadoColors = new Float32Array(segments * 3);
+            
+            for (let i = 0; i < segments; i++) {
+                const ratio = i / (segments - 1);
+                const radius = 2 + (10 * (1 - ratio));
+                const height = 40 * ratio;
+                const angle = ratio * Math.PI * 10 + (Date.now() * 0.001);
+                
+                tornadoPositions[i * 3] = Math.cos(angle) * radius;
+                tornadoPositions[i * 3 + 1] = height;
+                tornadoPositions[i * 3 + 2] = Math.sin(angle) * radius;
+                
+                // Gradient color
+                tornadoColors[i * 3] = 0.4;
+                tornadoColors[i * 3 + 1] = 0.4;
+                tornadoColors[i * 3 + 2] = 0.4;
+            }
+            
+            tornadoGeometry.setAttribute('position', new THREE.BufferAttribute(tornadoPositions, 3));
+            tornadoGeometry.setAttribute('color', new THREE.BufferAttribute(tornadoColors, 3));
+            
+            const tornadoMaterial = new THREE.LineBasicMaterial({
+                vertexColors: true,
+                linewidth: 1
+            });
+            
+            tornado = new THREE.Line(tornadoGeometry, tornadoMaterial);
+            scene.add(tornado);
+            
+            // Create debris particles
+            const debrisCount = intensity * 300;
+            const debrisGeometry = new THREE.BufferGeometry();
+            const debrisPositions = new Float32Array(debrisCount * 3);
+            const debrisVelocities = [];
+            
+            for (let i = 0; i < debrisCount; i++) {
+                const angle = Math.random() * Math.PI * 2;
+                const radiusBase = Math.random() * 15;
+                const heightRatio = Math.random();
+                const radius = radiusBase * (1 - heightRatio * 0.7);
+                const height = 40 * heightRatio;
+                
+                debrisPositions[i * 3] = Math.cos(angle) * radius;
+                debrisPositions[i * 3 + 1] = height;
+                debrisPositions[i * 3 + 2] = Math.sin(angle) * radius;
+                
+                // Velocities for animation
+                debrisVelocities.push({
+                    angle: angle,
+                    radius: radius,
+                    height: height,
+                    speed: 0.1 + Math.random() * 0.2 * (windSpeed / 5),
+                    upSpeed: (Math.random() - 0.5) * 0.1
+                });
+            }
+            
+            debrisGeometry.setAttribute('position', new THREE.BufferAttribute(debrisPositions, 3));
+            
+            const debrisMaterial = new THREE.PointsMaterial({
+                color: 0xbbbbbb,
+                size: 0.3,
+                transparent: true,
+                opacity: 0.7
+            });
+            
+            particleSystem = new THREE.Points(debrisGeometry, debrisMaterial);
+            scene.add(particleSystem);
+            
+            particles = debrisVelocities;
+            
+            // Add position to tornado based on wind direction
+            const distance = 20 + windSpeed * 3;
+            const angleRad = windDirection * Math.PI / 180;
+            tornado.position.x = Math.sin(angleRad) * distance;
+            tornado.position.z = Math.cos(angleRad) * distance;
+            particleSystem.position.copy(tornado.position);
+            
+            // Dark sky for tornado
+            sky.setColor(0x333344);
+            
+            // Remove fog
+            scene.fog = null;
+            
+            return { tornado, particleSystem };
+        }
+        
+        // Fog system
+        function createFog() {
+            if (particleSystem) {
+                scene.remove(particleSystem);
+                particles = [];
+            }
+            
+            // Set scene fog
+            const fogDensity = 0.01 * (intensity / 10);
+            scene.fog = new THREE.FogExp2(0xcccccc, fogDensity);
+            
+            // Create some fog particles for visual effect
+            const fogCount = intensity * 500;
+            const fogGeometry = new THREE.BufferGeometry();
+            const fogPositions = new Float32Array(fogCount * 3);
+            const fogVelocities = [];
+            
+            for (let i = 0; i < fogCount; i++) {
+                const x = (Math.random() - 0.5) * 200;
+                const y = Math.random() * 10;
+                const z = (Math.random() - 0.5) * 200;
+                
+                fogPositions[i * 3] = x;
+                fogPositions[i * 3 + 1] = y;
+                fogPositions[i * 3 + 2] = z;
+                
+                // Slow movement for fog
+                const dirRadians = windDirection * Math.PI / 180;
+                const windX = Math.sin(dirRadians) * windSpeed * 0.005;
+                const windZ = Math.cos(dirRadians) * windSpeed * 0.005;
+                
+                fogVelocities.push({
+                    x: windX,
+                    y: (Math.random() - 0.5) * 0.01,
+                    z: windZ
+                });
+            }
+            
+            fogGeometry.setAttribute('position', new THREE.BufferAttribute(fogPositions, 3));
+            
+            const fogMaterial = new THREE.PointsMaterial({
+                color: 0xdddddd,
+                size: 2.0,
+                transparent: true,
+                opacity: 0.3
+            });
+            
+            particleSystem = new THREE.Points(fogGeometry, fogMaterial);
+            scene.add(particleSystem);
+            
+            particles = fogVelocities;
+            
+            // Grayish sky for fog
+            sky.setColor(0xaaaaaa);
+            
+            return particleSystem;
+        }
+        
+        // Clear weather
+        function createSunny() {
+            if (particleSystem) {
+                scene.remove(particleSystem);
+                particles = [];
+                particleSystem = null;
+            }
+            
+            if (tornado) {
+                scene.remove(tornado);
+                tornado = null;
+            }
+            
+            // Clear fog
+            scene.fog = null;
+            
+            // Bright blue sky for sunny weather
+            sky.setColor(0x87CEEB);
+            
+            // Update sun position to be more visible
+            updateSun(new THREE.Vector3(100, 200, 100));
+            
+            return null;
+        }
+        
+        // Apply initial weather
+        let currentWeatherSystem = createRain();
+        
+        // Update particles every frame
+        function updateParticles(delta) {
+            if (!particleSystem) return;
+            
+            const positions = particleSystem.geometry.attributes.position.array;
+            
+            if (currentWeather === "rain") {
+                for (let i = 0; i < particles.length; i++) {
+                    positions[i * 3] += particles[i].x;
+                    positions[i * 3 + 1] += particles[i].y;
+                    positions[i * 3 + 2] += particles[i].z;
+                    
+                    // Reset when it hits the ground or goes too far
+                    if (positions[i * 3 + 1] < 0 ||
+                        Math.abs(positions[i * 3]) > 100 ||
+                        Math.abs(positions[i * 3 + 2]) > 100) {
+                        positions[i * 3] = (Math.random() - 0.5) * 200;
+                        positions[i * 3 + 1] = 100;
+                        positions[i * 3 + 2] = (Math.random() - 0.5) * 200;
+                    }
+                }
+            } else if (currentWeather === "snow") {
+                for (let i = 0; i < particles.length; i++) {
+                    // Add some wobble for snow
+                    particles[i].wobble += particles[i].wobbleSpeed;
+                    
+                    positions[i * 3] += particles[i].x + Math.sin(particles[i].wobble) * 0.02;
+                    positions[i * 3 + 1] += particles[i].y;
+                    positions[i * 3 + 2] += particles[i].z + Math.cos(particles[i].wobble) * 0.02;
+                    
+                    // Reset when it hits the ground or goes too far
+                    if (positions[i * 3 + 1] < 0 ||
+                        Math.abs(positions[i * 3]) > 100 ||
+                        Math.abs(positions[i * 3 + 2]) > 100) {
+                        positions[i * 3] = (Math.random() - 0.5) * 200;
+                        positions[i * 3 + 1] = 100;
+                        positions[i * 3 + 2] = (Math.random() - 0.5) * 200;
+                    }
+                }
+            } else if (currentWeather === "tornado") {
+                if (tornado) {
+                    // Animate the tornado shape
+                    const tornadoPositions = tornado.geometry.attributes.position.array;
+                    for (let i = 0; i < tornadoPositions.length / 3; i++) {
+                        const ratio = i / ((tornadoPositions.length / 3) - 1);
+                        const radius = 2 + (10 * (1 - ratio));
+                        const angle = ratio * Math.PI * 10 + (Date.now() * 0.001);
+                        
+                        tornadoPositions[i * 3] = Math.cos(angle) * radius;
+                        tornadoPositions[i * 3 + 2] = Math.sin(angle) * radius;
+                    }
+                    tornado.geometry.attributes.position.needsUpdate = true;
+                    
+                    // Update debris particles
+                    for (let i = 0; i < particles.length; i++) {
+                        // Update angle for spinning
+                        particles[i].angle += particles[i].speed;
+                        particles[i].height += particles[i].upSpeed;
+                        
+                        // Keep particles within the funnel
+                        const heightRatio = particles[i].height / 40;
+                        if (heightRatio > 1 || heightRatio < 0) {
+                            particles[i].upSpeed = -particles[i].upSpeed;
+                        }
+                        
+                        // Calculate new position
+                        positions[i * 3] = Math.cos(particles[i].angle) * particles[i].radius;
+                        positions[i * 3 + 1] = particles[i].height;
+                        positions[i * 3 + 2] = Math.sin(particles[i].angle) * particles[i].radius;
+                    }
+                }
+            } else if (currentWeather === "fog") {
+                for (let i = 0; i < particles.length; i++) {
+                    positions[i * 3] += particles[i].x;
+                    positions[i * 3 + 1] += particles[i].y;
+                    positions[i * 3 + 2] += particles[i].z;
+                    
+                    // Reset if goes too far
+                    if (Math.abs(positions[i * 3]) > 100 ||
+                        positions[i * 3 + 1] < 0 || positions[i * 3 + 1] > 15 ||
+                        Math.abs(positions[i * 3 + 2]) > 100) {
+                        positions[i * 3] = (Math.random() - 0.5) * 200;
+                        positions[i * 3 + 1] = Math.random() * 10;
+                        positions[i * 3 + 2] = (Math.random() - 0.5) * 200;
+                    }
+                }
+            }
+            
+            particleSystem.geometry.attributes.position.needsUpdate = true;
+        }
+        
+        // Animation loop
+        const clock = new THREE.Clock();
+        
+        function animate() {
+            requestAnimationFrame(animate);
+            
+            const delta = clock.getDelta();
+            controls.update();
+            
+            updateParticles(delta);
+            
+            renderer.render(scene, camera);
+        }
+        
+        animate();
+        
+        // Handle window resize
+        window.addEventListener('resize', function() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        });
+        
+        // UI Controls
+        const weatherButtons = document.querySelectorAll('#controls button');
+        weatherButtons.forEach(button => {
+            button.addEventListener('click', function() {
+                weatherButtons.forEach(btn => btn.classList.remove('active'));
+                this.classList.add('active');
+                
+                currentWeather = this.id;
+                
+                // Update weather system
+                switch(currentWeather) {
+                    case "rain":
+                        currentWeatherSystem = createRain();
+                        break;
+                    case "snow":
+                        currentWeatherSystem = createSnow();
+                        break;
+                    case "tornado":
+                        currentWeatherSystem = createTornado();
+                        break;
+                    case "sunny":
+                        currentWeatherSystem = createSunny();
+                        break;
+                    case "fog":
+                        currentWeatherSystem = createFog();
+                        break;
+                }
+            });
+        });
+        
+        // Intensity slider
+        const intensitySlider = document.getElementById('intensity');
+        const intensityValue = document.getElementById('intensity-value');
+        
+        intensitySlider.addEventListener('input', function() {
+            intensity = parseInt(this.value);
+            intensityValue.textContent = intensity;
+            
+            // Update current weather with new intensity
+            switch(currentWeather) {
+                case "rain":
+                    currentWeatherSystem = createRain();
+                    break;
+                case "snow":
+                    currentWeatherSystem = createSnow();
+                    break;
+                case "tornado":
+                    currentWeatherSystem = createTornado();
+                    break;
+                case "fog":
+                    currentWeatherSystem = createFog();
+                    break;
+            }
+        });
+        
+        // Wind speed slider
+        const windSlider = document.getElementById('wind');
+        const windValue = document.getElementById('wind-value');
+        
+        windSlider.addEventListener('input', function() {
+            windSpeed = parseInt(this.value);
+            windValue.textContent = windSpeed;
+            
+            // Update current weather with new wind speed
+            switch(currentWeather) {
+                case "rain":
+                    currentWeatherSystem = createRain();
+                    break;
+                case "snow":
+                    currentWeatherSystem = createSnow();
+                    break;
+                case "tornado":
+                    currentWeatherSystem = createTornado();
+                    break;
+                case "fog":
+                    currentWeatherSystem = createFog();
+                    break;
+            }
+        });
+        
+        // Wind direction slider
+        const directionSlider = document.getElementById('direction');
+        const directionValue = document.getElementById('direction-value');
+        
+        directionSlider.addEventListener('input', function() {
+            windDirection = parseInt(this.value);
+            directionValue.textContent = windDirection + '°';
+            
+            // Update current weather with new wind direction
+            switch(currentWeather) {
+
+        // UI Controls
+        const weatherButtons = document.querySelectorAll('#controls button');
+        weatherButtons.forEach(button => {
+            button.addEventListener('click', function() {
+                weatherButtons.forEach(btn => btn.classList.remove('active'));
+                this.classList.add('active');
+                
+                currentWeather = this.id;
+                
+                // Update weather system
+                switch(currentWeather) {
+                    case "rain":
+                        currentWeatherSystem = createRain();
+                        // Darker sky for rain
+                        skyUniforms['turbidity'].value = 20;
+                        skyUniforms['rayleigh'].value = 4;
+                        updateSun(0.45, 0.25);
+                        scene.fog = null;
+                        break;
+                    case "snow":
+                        currentWeatherSystem = createSnow();
+                        // Light overcast for snow
+                        skyUniforms['turbidity'].value = 15;
+                        skyUniforms['rayleigh'].value = 2;
+                        updateSun(0.45, 0.25);
+                        scene.fog = new THREE.FogExp2(0xeeeeee, 0.005);
+                        break;
+                    case "tornado":
+                        currentWeatherSystem = createTornado();
+                        // Dark sky for tornado
+                        skyUniforms['turbidity'].value = 30;
+                        skyUniforms['rayleigh'].value = 5;
+                        updateSun(0.35, 0.25);
+                        scene.fog = null;
+                        break;
+                    case "sunny":
+                        currentWeatherSystem = createSunny();
+                        break;
+                    case "fog":
+                        currentWeatherSystem = createFog();
+                        // Light gray for fog
+                        skyUniforms['turbidity'].value = 10;
+                        skyUniforms['rayleigh'].value = 3;
+                        updateSun(0.5, 0.25);
+                        break;
+                }
+            });
+        });
+        
+        // Intensity slider
+        const intensitySlider = document.getElementById('intensity');
+        const intensityValue = document.getElementById('intensity-value');
+        
+        intensitySlider.addEventListener('input', function() {
+            intensity = parseInt(this.value);
+            intensityValue.textContent = intensity;
+            
+            // Update current weather with new intensity
+            switch(currentWeather) {
+                case "rain":
+                    currentWeatherSystem = createRain();
+                    break;
+                case "snow":
+                    currentWeatherSystem = createSnow();
+                    break;
+                case "tornado":
+                    currentWeatherSystem = createTornado();
+                    break;
+                case "fog":
+                    currentWeatherSystem = createFog();
+                    break;
+            }
+        });
+        
+        // Wind speed slider
+        const windSlider = document.getElementById('wind');
+        const windValue = document.getElementById('wind-value');
+        
+        windSlider.addEventListener('input', function() {
+            windSpeed = parseInt(this.value);
+            windValue.textContent = windSpeed;
+            
+            // Update current weather with new wind speed
+            switch(currentWeather) {
+                case "rain":
+                    currentWeatherSystem = createRain();
+                    break;
+                case "snow":
+                    currentWeatherSystem = createSnow();
+                    break;
+                case "tornado":
+                    currentWeatherSystem = createTornado();
+                    break;
+                case "fog":
+                    currentWeatherSystem = createFog();
+                    break;
+            }
+        });
+        
+        // Wind direction slider
+        const directionSlider = document.getElementById('direction');
+        const directionValue = document.getElementById('direction-value');
+        
+        directionSlider.addEventListener('input', function() {
+            windDirection = parseInt(this.value);
+            directionValue.textContent = windDirection + '°';
+            
+            // Update current weather with new wind direction
+            switch(currentWeather) {
+                case "rain":
+                    currentWeatherSystem = createRain();
+                    break;
+                case "snow":
+                    currentWeatherSystem = createSnow();
+                    break;
+                case "tornado":
+                    currentWeatherSystem = createTornado();
+                    break;
+                case "fog":
+                    currentWeatherSystem = createFog();
+                    break;
+            }
+        });
+    </script>
+</body>
+</html>
